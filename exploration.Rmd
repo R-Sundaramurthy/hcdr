@@ -1,0 +1,165 @@
+---
+title: "Home Credit Default Risk"
+author: 'Julius Kittler, tbd ...'
+date: '20 July 2018'
+output:
+  html_document:
+    number_sections: true
+    toc: true
+    fig_width: 7
+    fig_height: 4.5
+    fontsize: 11pt
+    theme: readable
+    highlight: tango
+---
+
+# Introduction
+
+**This document is pending. Next steps / problems to be solved are as follows: **
+
+1. Include non-numeric values in the prediction by adding a binary variable (of value 0 or 1) for every possible value of the non-numeriv value (currently just numeric, non-missing variables from application_train.csv are used)
+2. Deal with missing values (fill NA's with mean of the variable, using mean(na.rm = TRUE))
+3. Improve logistic regression (why is it doing so horribly right now?)
+4. Feature selection (make sure the previously added features don't harm the model and really add value)
+5. Try 5-fold or 10-fold cross validation (instead of splitting application_train.csv 2/3 for training and 1/3 for test)
+6. Apply other algorithms (LDA, QDA, KNN, SVM, tree algorithms) 
+7. Use bagging, boosting, random forrests (for model aggregation)
+8. Consider using the other prediction variables (from other data files next to application_train.csv)
+
+
+# Exploration
+
+## Exploring NA's and numeric vs. non-numeric
+```{r}
+# read in application_train.csv as data frame
+application_train = read.csv(file = "input/application_train.csv")
+
+# get number of non-numeric variables
+(ncol(application_train) - length(which(sapply(application_train, is.numeric)))) # 16
+
+# get number of variables with NA's
+length(which(sapply(application_train, anyNA))) #61
+
+# get number of rows that we would get after removing rows with any NA's 
+nrow(na.omit(application_train)) # that is very few. Find a better solution than removing them?
+
+# We will need to transform non-numeric variables and also find a solution for the NAs but for now, let's look at the variables that are numeric and have no NA's.
+```
+
+## Comparing min, max, mean of application_train.csv (y = 1 vs. y = 0)
+```{r}
+# get indices of variables that are numeric and have no NA's
+numeric = which(sapply(application_train, is.numeric))
+na = which(sapply(application_train, anyNA))
+numericNotNa = setdiff(numeric, na)
+
+# only use the numeric variables, also remove the id SK_ID_CURR
+# note: for now, we do not need to consider NA (we can set na.rm = TRUE)
+application_train_numeric = application_train[, c(numeric)] # 45 variables
+application_train_numeric_noID = application_train_numeric[, -which(colnames(application_train_numeric) == "SK_ID_CURR")] # 44 variables
+
+# split application_train into subsets with y = 0 and y = 1
+sub_0 = application_train_numeric_noID[which(application_train_numeric_noID$TARGET == 0 ), ]
+sub_1 = application_train_numeric_noID[which(application_train_numeric_noID$TARGET == 1 ), ]
+
+# check if the number of rows match
+nrow(sub_0) + nrow(sub_1) == nrow(application_train_numeric_noID) 
+
+# create comparison data frame for means (with numeric, non-na variables)
+CompareMeans = function() {
+  vars = names(application_train_numeric_noID)
+  min0 = character(ncol(application_train_numeric_noID))
+  min1 = character(ncol(application_train_numeric_noID))
+  max0 = character(ncol(application_train_numeric_noID))
+  max1 = character(ncol(application_train_numeric_noID))
+  mean0 = numeric(ncol(application_train_numeric_noID))
+  mean1 = numeric(ncol(application_train_numeric_noID))
+  diff = numeric(ncol(application_train_numeric_noID))
+  
+  for (i in 1:ncol(application_train_numeric_noID)) {
+    min0[i] = round(min(sub_0[, i], na.rm = T), 2)
+    min1[i] = round(min(sub_1[, i], na.rm = T), 2)
+    max0[i] = round(max(sub_0[, i], na.rm = T), 2)
+    max1[i] = round(max(sub_1[, i], na.rm = T), 2)
+    mean0[i] = round(mean(sub_0[, i], na.rm = T), 2)
+    mean1[i] = round(mean(sub_1[, i], na.rm = T), 2)
+    diff[i] = mean1[i] - mean0[i]
+  }
+  
+  comp = data.frame(vars, min0, min1, max0, max1, mean0, mean1, diff)
+  comp = comp[order(comp$diff, decreasing = T), ]
+  rownames(comp) = 1:nrow(comp)
+  return(comp)
+}
+
+comp = CompareMeans()
+comp[,c(1, 6:8)] # only print mean comparison and diff
+```
+
+
+# Prediction (Logistic Regression)
+
+## Splitting application_train.csv into test and training data
+
+```{r}
+
+# check number of observations: 307511
+nrow(application_train) 
+
+# compute number of observations to be selected for training data: 205007
+2/3 * nrow(application_train)  
+
+# randomly select indices for training data
+trainIndices = sample(1:307511, 205007)
+
+# check if selected indices make sense
+cat("length:", length(trainIndices), 
+    ", max: ", max(trainIndices), 
+    ", min: ", min(trainIndices))
+
+# select training data (2/3 of the given training data) and test data (1/3 of the given training data)
+train = application_train[trainIndices,]
+test = application_train[-trainIndices,]
+
+# split both datasets into input (x) and output (y) data 
+y_train = train$TARGET
+x_train = train[,-which(colnames(train)=="TARGET" | colnames(train)=="SK_ID_CURR")]
+
+y_test = test$TARGET
+x_test = test[,-which(colnames(test)=="TARGET" | colnames(test)=="SK_ID_CURR")]
+```
+
+## Applying logistic regression and the predicion
+
+```{r}
+
+# get all the indices of numeric variables in a vector (only they can be used in logistic regression)
+numeric = which(sapply(x_train, is.numeric))
+na = which(sapply(x_train, anyNA))
+numericNotNa = setdiff(numeric, na)
+
+# get the number of current variables: 43 (of 120)
+length(numericNotNa)
+
+# compute logistic model
+logistic = glm(y_train ~ . , data = x_train[, numericNotNa], family = "binomial")
+summary(logistic)
+
+# predict probabilities for test data
+predicted = predict(logistic, x_test[, numericNotNa]) #gives  b0 + b1x1 + b2x2 + b3x3 ... 
+probs = exp(predicted)/(1+exp(predicted)) #gives you probability that y=1 for each observation
+
+# transform probabilities to binary 
+probs_binary = rep(0, length(probs))
+indices_1 = which(probs > 0.5)
+probs_binary[indices_1] = 1
+
+# evaluate results
+tn = length(which(probs_binary == test$TARGET & test$TARGET == 0)) # 94277 True Negatives
+tp = length(which(probs_binary == test$TARGET & test$TARGET == 1)) # 0 True Positives
+
+fn = length(which(probs_binary != test$TARGET & probs_binary == 0)) # 8224 False Negatives
+fp = length(which(probs_binary != test$TARGET & probs_binary == 1)) # 3 False Positives
+
+```
+
