@@ -8,9 +8,9 @@ they should stay hidden from git (since .csv is added to the .gitignore file). H
 
 ## Next steps / problems to be solved
 
-- Include non-numeric values in the prediction by adding a binary variable (of value 0 or 1) for every possible value of the non-numeriv value (currently just numeric, non-missing variables from application_train.csv are used)
-- Deal with missing values (which method to chose? e.g. fill NA's with mean of the variable, using mean(na.rm = TRUE), or try using the mice package )
-- Understand ROC (the key criterion for this competition), how to plot and how to compute it so that we can optimize our modesl based on this criterion
+- Include non-numeric values in the prediction by adding a binary variable (of value 0 or 1) for every possible value of the non-numeric value (currently just numeric, non-missing variables from application_train.csv are used)
+- Deal with missing values (which method to chose? e.g. fill NA's with mean of the variable, using mean(na.rm = TRUE), or try using the mice package https://www.rdocumentation.org/packages/mice/versions/3.1.0/topics/mice after understanding how it works)
+- Understand ROC (the key criterion for this competition), how to plot and how to compute it so that we can optimize our models based on this criterion
 - Improve logistic regression (why is it doing so horribly right now?)
 - Feature selection (make sure the previously added features don't harm the model and really add value)
 - Try 5-fold or 10-fold cross validation (instead of splitting application_train.csv 2/3 for training and 1/3 for test)
