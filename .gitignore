@@ -43,3 +43,6 @@ rsconnect/
 
 # .html files
 *.html
+
+# /input folder
+/input/
