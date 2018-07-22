@@ -40,7 +40,7 @@ summary(lm) # correct (each factor value is treated as binary variable)
 
 ```
 
-## deal with NA's
+## Deal with NA's
 
 ```{r}
 length(which(sapply(application_train, anyNA))) # get number of variables with NA's: 61
