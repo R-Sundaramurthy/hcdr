@@ -17,24 +17,159 @@ output:
 
 **This document is pending. Next steps / problems to be solved can be found in the README.md file. **
 
-# Exploration
+# Preparation
 
-## Exploring NA's and numeric vs. non-numeric
+## Deal with non-numeric variables
 ```{r}
+# set working directory with setwd()
+
 # read in application_train.csv as data frame
 application_train = read.csv(file = "input/application_train.csv")
+str(application_train)
 
-# get number of non-numeric variables
-(ncol(application_train) - length(which(sapply(application_train, is.numeric)))) # 16
+# deal with non-numeric variables
+(ncol(application_train) - length(which(sapply(application_train, is.numeric)))) # get number of non-numeric variables: 16
+length(which(sapply(application_train, is.factor))) # number of factors: 16 --> since all non-numeric variables are already imported as factors, no transformation is needed
+which(sapply(application_train, is.factor) & sapply(application_train, anyNA)) # get number of non-numeric variables with NA's: 0
 
-# get number of variables with NA's
-length(which(sapply(application_train, anyNA))) #61
+# check solution for non-numeric variables
+which(sapply(application_train, is.factor)) # output all the factor indices and names 
+summary(application_train$NAME_EDUCATION_TYPE) # get infos about a factor
+lm = glm(application_train$TARGET ~ application_train$NAME_EDUCATION_TYPE) # testing model fitting with factor
+summary(lm) # correct (each factor value is treated as binary variable)
 
-# get number of rows that we would get after removing rows with any NA's 
-nrow(na.omit(application_train)) # that is very few. Find a better solution than removing them?
-
-# We will need to transform non-numeric variables and also find a solution for the NAs but for now, let's look at the variables that are numeric and have no NA's.
 ```
+
+## deal with NA's
+
+```{r}
+length(which(sapply(application_train, anyNA))) # get number of variables with NA's: 61
+nrow(na.omit(application_train)) # get number of rows that we would get after removing rows with any NA's: 11351 (of 307511) --> too few --> different solution for handling NA's is needed
+
+ImputeNa = function(df) { # function that replaces all NA's in numeric columns with the mean of the numeric columns
+  for (i in 1:ncol(df)) { # loop through all columns
+    if (is.factor(df[, i]) == F) {
+      naInd = which(is.na(df[, i])) # get indices of rows with NA in current column
+      if (length(naInd) != 0) {
+        df[naInd, i] = mean(df[, i], na.rm = T) # overwrite NA with mean value
+      }
+    }
+  }
+  return(df)
+}
+
+# check solution for NA's
+which(sapply(application_train, anyNA)) # get all columns with NA's
+length(which(sapply(application_train, anyNA))) # get number of all columns with NA's: 61
+naInd11 = which(is.na(application_train[, 11])) # get NA indices of one specific column (11)
+length(naInd11) # get number of NA values of the specific column: 278
+mean(application_train[, 11], na.rm = T) # get mean of the specific column: 538396.2
+
+application_train = ImputeNa(application_train) # overwrite NA's
+
+which(sapply(application_train, anyNA)) # get all columns with NA's
+length(which(sapply(application_train, anyNA))) # get number of all columns with NA's: 0
+application_train[naInd11, 11] # get overwritten values of one specific column (11): 538396.2
+length(application_train[which(is.na(application_train[, 11])), 11]) # get number of NA values of the specific column: 0
+mean(application_train[, 11], na.rm = T) # get mean of the specific column: 538396.2
+
+```
+
+# Prediction 
+
+## Logistic Regression (local)
+
+### Splitting application_train.csv into test and training data
+
+```{r}
+
+# check number of observations: 307511
+nrow(application_train) 
+
+# compute number of observations to be selected for training data: 205007
+2/3 * nrow(application_train)  
+
+# randomly select indices for training data
+set.seed(0)
+trainIndices = sample(1:307511, 205007)
+
+# check if selected indices make sense
+cat("length:", length(trainIndices), 
+    ", max: ", max(trainIndices), 
+    ", min: ", min(trainIndices))
+
+# select training data (2/3 of the given training data) and test data (1/3 of the given training data)
+train = application_train[trainIndices,]
+test = application_train[-trainIndices,]
+
+# split both datasets into input (x) and output (y) data 
+y_train = train$TARGET
+x_train = train[,-which(colnames(train)=="TARGET" | colnames(train)=="SK_ID_CURR")] # remove ID and target variable
+
+y_test = test$TARGET
+x_test = test[,-which(colnames(test)=="TARGET" | colnames(test)=="SK_ID_CURR")] # remove ID and target variable
+```
+
+### Applying logistic regression and the predicion
+
+```{r}
+
+# compute logistic model
+logistic_local = glm(y_train ~ . , data = x_train, family = "binomial")
+summary(logistic_local)
+
+# predict probabilities for test data
+predicted_local = predict(logistic_local, x_test) #gives  b0 + b1x1 + b2x2 + b3x3 ... 
+probs_local = exp(predicted_local)/(1+exp(predicted_local)) #gives you probability that y=1 for each observation
+
+# transform probabilities to binary 
+probs_binary = rep(0, length(probs_local))
+indices_1 = which(probs_local > 0.5)
+probs_binary[indices_1] = 1
+
+# evaluate results
+tn = length(which(probs_binary == test$TARGET & test$TARGET == 0)) # 94191 True Negatives
+tp = length(which(probs_binary == test$TARGET & test$TARGET == 1)) # 109 True Positives
+
+fn = length(which(probs_binary != test$TARGET & probs_binary == 0)) # 8088 False Negatives
+fp = length(which(probs_binary != test$TARGET & probs_binary == 1)) # 116 False Positives
+
+```
+
+## Logistic Regression (Kaggle submission)
+
+```{r}
+
+# read in application_test.csv 
+application_test = read.csv(file = "input/application_test.csv")
+SK_ID_CURR = application_test$SK_ID_CURR
+application_test = application_test[, -which(colnames(application_test) == "SK_ID_CURR")] # remove SK_ID_CURR in application_test
+
+# prepare application_test.csv 
+which(sapply(application_test, is.factor) & sapply(application_test, anyNA)) # get number of non-numeric variables with NA's: 0
+application_test = ImputeNa(application_test) # replace NA's in numeric variables
+
+# split up application_train in y and x
+y_application_train = application_train$TARGET
+x_application_train = application_train[,-which(colnames(application_train)=="TARGET" | colnames(application_train)=="SK_ID_CURR")] # remove SK_ID_CURR and target variable
+
+# compute logistic model
+logistic = glm(y_application_train ~ . , data = x_application_train, family = "binomial")
+summary(logistic)
+
+# predict probabilities for test data
+predicted = predict(logistic, application_test, na.action=na.pass) #gives  b0 + b1x1 + b2x2 + b3x3 ... 
+probs = exp(predicted)/(1+exp(predicted)) #gives you probability that y=1 for each observation
+TARGET = round(probs, 1) # create variable for submission
+length(which(TARGET >= 0.5))
+
+# prepare Kaggle submission.csv file
+submission = data.frame(SK_ID_CURR, TARGET) # create data frame 
+write.csv(submission, file = "submission.csv", row.names = F) # create submission.csv file (score 0.713, rank 4231)
+
+```
+
+# ARCHIVE (EDA)
 
 ## Comparing min, max, mean of application_train.csv (y = 1 vs. y = 0)
 ```{r}
@@ -85,71 +220,3 @@ CompareMeans = function() {
 comp = CompareMeans()
 comp[,c(1, 6:8)] # only print mean comparison and diff
 ```
-
-
-# Prediction (Logistic Regression)
-
-## Splitting application_train.csv into test and training data
-
-```{r}
-
-# check number of observations: 307511
-nrow(application_train) 
-
-# compute number of observations to be selected for training data: 205007
-2/3 * nrow(application_train)  
-
-# randomly select indices for training data
-trainIndices = sample(1:307511, 205007)
-
-# check if selected indices make sense
-cat("length:", length(trainIndices), 
-    ", max: ", max(trainIndices), 
-    ", min: ", min(trainIndices))
-
-# select training data (2/3 of the given training data) and test data (1/3 of the given training data)
-train = application_train[trainIndices,]
-test = application_train[-trainIndices,]
-
-# split both datasets into input (x) and output (y) data 
-y_train = train$TARGET
-x_train = train[,-which(colnames(train)=="TARGET" | colnames(train)=="SK_ID_CURR")]
-
-y_test = test$TARGET
-x_test = test[,-which(colnames(test)=="TARGET" | colnames(test)=="SK_ID_CURR")]
-```
-
-## Applying logistic regression and the predicion
-
-```{r}
-
-# get all the indices of numeric variables in a vector (only they can be used in logistic regression)
-numeric = which(sapply(x_train, is.numeric))
-na = which(sapply(x_train, anyNA))
-numericNotNa = setdiff(numeric, na)
-
-# get the number of current variables: 43 (of 120)
-length(numericNotNa)
-
-# compute logistic model
-logistic = glm(y_train ~ . , data = x_train[, numericNotNa], family = "binomial")
-summary(logistic)
-
-# predict probabilities for test data
-predicted = predict(logistic, x_test[, numericNotNa]) #gives  b0 + b1x1 + b2x2 + b3x3 ... 
-probs = exp(predicted)/(1+exp(predicted)) #gives you probability that y=1 for each observation
-
-# transform probabilities to binary 
-probs_binary = rep(0, length(probs))
-indices_1 = which(probs > 0.5)
-probs_binary[indices_1] = 1
-
-# evaluate results
-tn = length(which(probs_binary == test$TARGET & test$TARGET == 0)) # 94277 True Negatives
-tp = length(which(probs_binary == test$TARGET & test$TARGET == 1)) # 0 True Positives
-
-fn = length(which(probs_binary != test$TARGET & probs_binary == 0)) # 8224 False Negatives
-fp = length(which(probs_binary != test$TARGET & probs_binary == 1)) # 3 False Positives
-
-```
-
