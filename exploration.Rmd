@@ -158,14 +158,66 @@ logistic = glm(y_application_train ~ . , data = x_application_train, family = "b
 summary(logistic)
 
 # predict probabilities for test data
-predicted = predict(logistic, application_test, na.action=na.pass) #gives  b0 + b1x1 + b2x2 + b3x3 ... 
-probs = exp(predicted)/(1+exp(predicted)) #gives you probability that y=1 for each observation
-TARGET = round(probs, 1) # create variable for submission
+predicted_logistic = predict(logistic, application_test, na.action=na.pass) #gives  b0 + b1x1 + b2x2 + b3x3 ... 
+probs_logistic = exp(predicted_logistic)/(1+exp(predicted_logistic)) #gives you probability that y=1 for each observation
+TARGET = round(probs_logistic, 1) # create variable for submission
 length(which(TARGET >= 0.5))
 
 # prepare Kaggle submission.csv file
 submission = data.frame(SK_ID_CURR, TARGET) # create data frame 
 write.csv(submission, file = "submission.csv", row.names = F) # create submission.csv file (score 0.713, rank 4231)
+
+```
+
+## Logistic Regression - variables uncorrelated with TARGET removed (Kaggle submission)
+
+```{r}
+
+# read in application_test.csv 
+application_test = read.csv(file = "input/application_test.csv")
+SK_ID_CURR = application_test$SK_ID_CURR
+application_test = application_test[, -which(colnames(application_test) == "SK_ID_CURR")] # remove SK_ID_CURR in application_test
+
+# in application_test, remove variables with abs(correlation with y) < 0.01
+# see passage: Correlations (all x TARGET) - only numeric variables
+# we take noCorr$names from there
+ncol(application_test) # 120
+length(noCorr$names) # 46
+application_test = application_test[, -which(colnames(application_test) %in% noCorr$names)]
+ncol(application_test) # 75 --> 45 removed (SK_ID_CURR already was removed)
+
+# prepare application_test
+which(sapply(application_test, is.factor) & sapply(application_test, anyNA)) # get number of non-numeric variables with NA's: 0
+application_test = ImputeNa(application_test) # replace NA's in numeric variables
+
+# in application_train, remove variables with abs(correlation with y) < 0.01
+# see passage: Correlations (all x TARGET) - only numeric variables
+# we take noCorr$names from there
+ncol(application_train) # 122
+length(noCorr$names) # 46
+application_train = application_train[, -which(colnames(application_train) %in% noCorr$names)]
+ncol(application_train) # 76 --> 46 removed
+
+# split up application_train in y and x
+y_application_train = application_train$TARGET
+x_application_train = application_train[,-which(colnames(application_train)=="TARGET" | colnames(application_train)=="SK_ID_CURR")] # remove SK_ID_CURR and target variable
+
+# compute logistic model
+logistic = glm(y_application_train ~ . , data = x_application_train, family = "binomial")
+summary(logistic)
+
+# predict probabilities for test data
+predicted_logistic = predict(logistic, application_test, na.action=na.pass) #gives  b0 + b1x1 + b2x2 + b3x3 ... 
+probs_logistic = exp(predicted_logistic)/(1+exp(predicted_logistic)) #gives you probability that y=1 for each observation
+TARGET = round(probs_logistic, 1) # create variable for submission
+length(which(TARGET >= 0.5))
+
+# prepare Kaggle submission.csv file
+submission = data.frame(SK_ID_CURR, TARGET) # create data frame 
+write.csv(submission, file = "submission2.csv", row.names = F) # create submission.csv file 
+
+# previously: score 0.713, rank 4231
+# now: 0.712, rank 4290 --> got WORSE!
 
 ```
 
@@ -264,7 +316,13 @@ names = names(correlation) # save variable names
 names(correlation) = NULL # clear variable names
 
 df = data.frame(names, round(correlation, 4)) # create data frame of variable names and rounded "all x TARGET"-correlations
+colnames(df) = c("names", "correlation")
 df
+
+# get all variables with abs(corr) < 0.01
+noCorr = df[abs(df$correlation) < 0.01, ]
+nrow(noCorr)
+noCorr$names
 
 par(mar=c(8, 4, 5, 0))
 barplot(df[-1, 2], names = df[-1, 1], main = "Correlations: Numerical Predictors with TARGET", ylim = c(-0.15, 0.10), cex.names = 0.3, las=2)
