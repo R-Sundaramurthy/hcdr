@@ -220,3 +220,53 @@ CompareMeans = function() {
 comp = CompareMeans()
 comp[,c(1, 6:8)] # only print mean comparison and diff
 ```
+
+## Correlations (all x all) - only numeric variables
+
+```{r}
+library(corrplot)
+library(tidyverse)
+
+# Create a tibble with grp for split in groups of 10
+n1 <- 10 
+m1 <- cor(application_train[, -which(sapply(application_train, is.factor))])
+out <- as.table(m1) %>%
+        as_data_frame %>% 
+        transmute(Var1N = pmin(Var1, Var2), Var2N = pmax(Var1, Var2), n) %>% 
+        distinct %>% 
+        filter(Var1N != Var2N) %>% 
+        arrange(desc(n)) %>%
+        group_by(grp = as.integer(gl(n(), n1, n())))
+
+# Corrplot for top 10 correlated variables
+out1 = filter(out, grp == 1)
+m1 = xtabs(n ~ Var1N + Var2N, out1)
+corrplot(m1, method="number", type="upper", mar = c(0,0,0,0), tl.cex = 0.5, cl.cex = 0.5, cl.align.text = "l", number.cex = 0.5)
+
+# Corrplot for top 11-20 correlated variables
+out2 = filter(out, grp == 2)
+m2 = xtabs(n ~ Var1N + Var2N, out2)
+corrplot(m2, method="number", type="upper", mar = c(0,0,0,0), tl.cex = 0.5, cl.cex = 0.5, cl.align.text = "l", number.cex = 0.5)
+
+# Display top 100 correlated variables
+out100 = filter(out, grp %in% 1:10)
+out100
+
+```
+
+## Correlations (all x TARGET) - only numeric variables
+
+```{r}
+
+correlation = cor(application_train[, -which(sapply(application_train, is.factor))]) # create correlation matrix for numerical variables
+correlation = sort(correlation[, 2], decreasing = T) # sort descending and select only "all x TARGET"-correlations
+names = names(correlation) # save variable names
+names(correlation) = NULL # clear variable names
+
+df = data.frame(names, round(correlation, 4)) # create data frame of variable names and rounded "all x TARGET"-correlations
+df
+
+par(mar=c(8, 4, 5, 0))
+barplot(df[-1, 2], names = df[-1, 1], main = "Correlations: Numerical Predictors with TARGET", ylim = c(-0.15, 0.10), cex.names = 0.3, las=2)
+
+```
